@@ -13,7 +13,8 @@ module.exports = {
   },
   compilers: {
     solc: {
-      version: "^0.4.24"
+      version: "pragma",
+      parser: "solcjs"
     }
   }
 };
