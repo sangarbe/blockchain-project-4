@@ -1,94 +1,83 @@
-
-var Test = require('../config/testConfig.js');
-var BigNumber = require('bignumber.js');
+const {expectRevert} = require('@openzeppelin/test-helpers');
+const FlightSuretyApp = artifacts.require("FlightSuretyApp");
+const FlightSuretyData = artifacts.require("FlightSuretyData");
 
 contract('Flight Surety Tests', async (accounts) => {
 
-  var config;
+  let flightSuretyData;
+  let flightSuretyApp;
+
   before('setup contract', async () => {
-    config = await Test.Config(accounts);
-    await config.flightSuretyData.authorizeCaller(config.flightSuretyApp.address);
+    flightSuretyData = await FlightSuretyData.new();
+    flightSuretyApp = await FlightSuretyApp.new(flightSuretyData.address);
+
+    await flightSuretyData.authorizeCaller(flightSuretyApp.address);
   });
 
-  /****************************************************************************************/
-  /* Operations and Settings                                                              */
-  /****************************************************************************************/
-
-  it(`(multiparty) has correct initial isOperational() value`, async function () {
-
-    // Get operating status
-    let status = await config.flightSuretyData.isOperational.call();
+  it(`(operational) has correct initial value`, async () => {
+    let status = await flightSuretyData.isOperational.call();
     assert.equal(status, true, "Incorrect initial operating status value");
-
   });
 
-  it(`(multiparty) can block access to setOperatingStatus() for non-Contract Owner account`, async function () {
-
-      // Ensure that access is denied for non-Contract Owner account
-      let accessDenied = false;
-      try 
-      {
-          await config.flightSuretyData.setOperatingStatus(false, { from: config.testAddresses[2] });
-      }
-      catch(e) {
-          accessDenied = true;
-      }
-      assert.equal(accessDenied, true, "Access not restricted to Contract Owner");
-            
+  it(`(operational) cannot change status if not the owner`, async () => {
+    await expectRevert.unspecified(flightSuretyData.setOperatingStatus(false, {from: accounts[2]}));
+    assert.equal(await flightSuretyData.isOperational.call(), true, "Operational status has unexpectedly changed");
   });
 
-  it(`(multiparty) can allow access to setOperatingStatus() for Contract Owner account`, async function () {
-
-      // Ensure that access is allowed for Contract Owner account
-      let accessDenied = false;
-      try 
-      {
-          await config.flightSuretyData.setOperatingStatus(false);
-      }
-      catch(e) {
-          accessDenied = true;
-      }
-      assert.equal(accessDenied, false, "Access not restricted to Contract Owner");
-      
+  it(`(operational) can change status if not the owner`, async () => {
+    await flightSuretyData.setOperatingStatus(false);
+    assert.equal(await flightSuretyData.isOperational.call(), false, "Owner did not change operational status");
   });
 
-  it(`(multiparty) can block access to functions using requireIsOperational when operating status is false`, async function () {
-
-      await config.flightSuretyData.setOperatingStatus(false);
-
-      let reverted = false;
-      try 
-      {
-          await config.flightSurety.setTestingMode(true);
-      }
-      catch(e) {
-          reverted = true;
-      }
-      assert.equal(reverted, true, "Access not blocked for requireIsOperational");      
-
-      // Set it back for other tests to work
-      await config.flightSuretyData.setOperatingStatus(true);
-
+  it(`(operational) functions access is blocked when not operational`, async () => {
+    await expectRevert(flightSuretyData.authorizeCaller(accounts[2]), "Contract is currently not operational");
+    await expectRevert(flightSuretyData.registerAirline(accounts[2]), "Contract is currently not operational");
+    await expectRevert(flightSuretyData.fund(), "Contract is currently not operational");
+    await flightSuretyData.setOperatingStatus(true);
   });
 
-  it('(airline) cannot register an Airline using registerAirline() if it is not funded', async () => {
-    
-    // ARRANGE
-    let newAirline = accounts[2];
+  it('(airlines) an airline cannot register if it is not funded', async () => {
+    await expectRevert(flightSuretyApp.registerAirline(accounts[2]), "Not funded airline can't participate");
+    assert.equal(await flightSuretyData.isAirline.call(accounts[2]), false, "Airline without funding managed to register another");
+  });
 
-    // ACT
-    try {
-        await config.flightSuretyApp.registerAirline(newAirline, {from: config.firstAirline});
+  it('(airlines) not registered airlines cannot be funded', async () => {
+    await expectRevert(flightSuretyData.fund({from: accounts[2]}), "Airline is not registered");
+    assert.equal(await flightSuretyData.isAirline.call(accounts[2]), false, "Airline funded before registering");
+  });
+
+  it('(airlines) can not be funded without enough value', async () => {
+    await expectRevert(flightSuretyData.fund({value: web3.utils.toWei("5", "ether")}), "Minimum funds are 10 ether");
+    assert.equal(await flightSuretyData.isAirline.call(accounts[0]), false, "Airline funded with not enough value");
+  });
+
+  it('(airlines) can be funded', async () => {
+    await flightSuretyData.fund({value: web3.utils.toWei("10", "ether")});
+    assert.equal(await flightSuretyData.isAirline.call(accounts[0]), true, "Airline not funded");
+  });
+
+  it('(airlines) an airline can register up to 4 airlines without consensus', async () => {
+    for (let i = 1; i < 4; i++) {
+      await flightSuretyApp.registerAirline(accounts[i]);
+      assert.equal(await flightSuretyData.isAirline.call(accounts[i]), false, `Airline ${i} added without funding`);
+      await flightSuretyData.fund({value: web3.utils.toWei("10", "ether"), from: accounts[i]});
+      assert.equal(await flightSuretyData.isAirline.call(accounts[i]), true, `Airline ${i} not registered`);
+      assert.equal(await flightSuretyData.participants.call(), i + 1, `Airline ${i} not accounted`);
     }
-    catch(e) {
-
-    }
-    let result = await config.flightSuretyData.isAirline.call(newAirline); 
-
-    // ASSERT
-    assert.equal(result, false, "Airline should not be able to register another airline if it hasn't provided funding");
-
   });
- 
+
+  it('(airlines) an airline can not register a fifth airline without consensus', async () => {
+    await flightSuretyApp.registerAirline(accounts[4]);
+    assert.equal(await flightSuretyData.isAirline.call(accounts[4]), false, `Airline added without funding`);
+    await expectRevert(flightSuretyData.fund({value: web3.utils.toWei("10", "ether"), from: accounts[4]}), "Airline is not registered");
+    assert.equal(await flightSuretyData.participants.call(), 4, `Airline accounted`);
+  });
+
+  it('(airlines) fifth airline gets registered when consensus reached', async () => {
+    await flightSuretyApp.registerAirline(accounts[4], {from: accounts[1]});
+    assert.equal(await flightSuretyData.isAirline.call(accounts[4]), false, `Airline added without funding`);
+    await flightSuretyData.fund({value: web3.utils.toWei("10", "ether"), from: accounts[4]});
+    assert.equal(await flightSuretyData.participants.call(), 5, `Airline not accounted`);
+  });
 
 });

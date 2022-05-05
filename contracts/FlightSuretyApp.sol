@@ -22,6 +22,7 @@ contract FlightSuretyApp is Ownable {
     }
 
     mapping(bytes32 => Flight) private _flights;
+
     FlightSurety private _dataContract;
 
 
@@ -36,7 +37,6 @@ contract FlightSuretyApp is Ownable {
 
     /**
     * @dev Contract constructor
-    *
     */
     constructor(address dataContractAddress) public
     {
@@ -51,16 +51,10 @@ contract FlightSuretyApp is Ownable {
 
     /**
      * @dev Add an airline to the registration queue
-    *
     */
-    function registerAirline
-    (
-    )
-    external
-    pure
-    returns (bool success, uint256 votes)
+    function registerAirline(address airline) external returns (bool success, uint256 votes)
     {
-        return (success, 0);
+        return _dataContract.registerAirline(airline);
     }
 
 
@@ -292,4 +286,5 @@ contract FlightSuretyApp is Ownable {
 contract FlightSurety {
     function setOperatingStatus(bool operational) external;
     function isOperational() public view returns (bool);
+    function registerAirline(address airline) external returns (bool, uint256);
 }
