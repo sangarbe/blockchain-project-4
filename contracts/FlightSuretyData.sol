@@ -7,18 +7,33 @@ import "./Operational.sol";
 contract FlightSuretyData is Operational {
     using SafeMath for uint256;
 
-    uint256 private constant MIN_FUNDS = 10 ether;
+    uint8 private constant STATUS_CODE_ON_TIME      = 10;
+    uint8 private constant STATUS_CODE_LATE_AIRLINE = 20;
+    uint256 private constant MIN_FUNDS              = 10 ether;
 
     enum AirlineStatus{EXCLUDED, QUEUED, REGISTERED, FUNDED}
 
-    struct Participant {
+    struct Airline {
         AirlineStatus status;
         address[] voters;
     }
 
-    address private                         _caller;
-    mapping(address => Participant) private _airlines;
-    uint private                            _participants = 0;
+    struct Flight {
+        bool isRegistered;
+        bool credited;
+        uint8 statusCode;
+        uint256 departureTimestamp;
+        address airline;
+    }
+
+    mapping(string => Flight) private                      _flights;
+    mapping(address => uint256) private                    _credits;
+    mapping(string => mapping(address => uint256)) private _insurees;
+    mapping(string => address[]) private                   _insureesList;
+
+    address private                     _caller;
+    mapping(address => Airline) private _airlines;
+    uint private                        _participants = 0;
 
     /**
     * @dev Modifier that requires the caller to be previously authorized. For app proxy contracts.
@@ -34,7 +49,7 @@ contract FlightSuretyData is Operational {
     */
     modifier requireFundedAirline()
     {
-        require(_airlines[tx.origin].status == AirlineStatus.FUNDED, "Not funded airline can't participate");
+        require(isAirline(tx.origin), "Not funded airline can't participate");
         _;
     }
 
@@ -131,57 +146,89 @@ contract FlightSuretyData is Operational {
         return _participants;
     }
 
+    /**
+    * @dev Add a flight for an airline. Can only be called from FlightSuretyApp contract
+    */
+    function registerFlight(string flight, uint256 departureTimestamp) external
+    requireIsOperational
+    requireAuthorizedCaller
+    requireFundedAirline
+    {
+        require(!_flights[flight].isRegistered, "Flight already registered");
+        require(departureTimestamp > now, "Flight already took off");
+
+        _flights[flight] = Flight(true, false, STATUS_CODE_ON_TIME, departureTimestamp, tx.origin);
+    }
 
     /**
-     * @dev Buy insurance for a flight
-    *
+    * @dev Updates flight's status.
     */
-    function buy
-    (
-    )
-    external
-    payable
+    function updateFlightStatus(string flight, uint8 status) external
+    requireIsOperational
+    requireAuthorizedCaller
     {
+        require(_flights[flight].isRegistered, "Flight is not registered");
+        require(_flights[flight].statusCode <= STATUS_CODE_ON_TIME, "Flight is already late");
 
+        _flights[flight].statusCode = status;
+    }
+
+    function isFlightRegistered(string flight) public view returns (bool)
+    {
+        return _flights[flight].isRegistered;
     }
 
     /**
-     *  @dev Credits payouts to insurees
+    * @dev Buy insurance for a flight
     */
-    function creditInsurees
-    (
-    )
-    external
-    pure
+    function buy(string flight) external payable
+    requireIsOperational
     {
+        require(msg.value > 0, "Should pay something");
+        require(_flights[flight].isRegistered, "Flight is not registered");
+        require(_flights[flight].statusCode <= STATUS_CODE_ON_TIME, "Flight is already late");
+
+        uint256 amount = _insurees[flight][msg.sender].add(msg.value);
+        require(amount <= 1 ether, "Can not pay more than 1 ether");
+
+        if (_insurees[flight][msg.sender] == 0) {
+            _insureesList[flight].push(msg.sender);
+        }
+
+        _insurees[flight][msg.sender] = amount;
+    }
+
+    /**
+    * @dev Credits payouts to insurees
+    */
+    function creditInsurees(string flight) external
+    requireIsOperational
+    requireAuthorizedCaller
+    {
+        require(!_flights[flight].credited, "Insurees already credited");
+        require(_flights[flight].statusCode == STATUS_CODE_LATE_AIRLINE, "Flight is not late because of airline");
+
+        _flights[flight].credited = true;
+
+        for (uint i = 0; i < _insureesList[flight].length; i++) {
+            address passenger = _insureesList[flight][i];
+            uint256 credit = _insurees[flight][passenger];
+            credit = credit + credit.div(2);
+            _credits[passenger] = _credits[passenger] + credit;
+        }
     }
 
 
     /**
-     *  @dev Transfers eligible payout funds to insuree
-     *
+    * @dev Transfers eligible payout funds to insuree
     */
-    function pay
-    (
-    )
-    external
-    pure
+    function pay() external
     {
+        uint256 credit = _credits[msg.sender];
+        _credits[msg.sender] = 0;
+        msg.sender.transfer(credit);
     }
 
-
-    function getFlightKey
-    (
-        address airline,
-        string memory flight,
-        uint256 timestamp
-    )
-    pure
-    internal
-    returns (bytes32)
-    {
-        return keccak256(abi.encodePacked(airline, flight, timestamp));
-    }
 
     /**
     * @dev Calculates the amount of participants for consensus.
@@ -205,7 +252,6 @@ contract FlightSuretyData is Operational {
     {
         fund();
     }
-
 
 }
 

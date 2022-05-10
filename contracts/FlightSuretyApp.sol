@@ -7,21 +7,21 @@ contract FlightSuretyApp is Ownable {
     using SafeMath for uint256;
 
     // Flight status codes
-    uint8 private constant STATUS_CODE_UNKNOWN = 0;
-    uint8 private constant STATUS_CODE_ON_TIME = 10;
-    uint8 private constant STATUS_CODE_LATE_AIRLINE = 20;
-    uint8 private constant STATUS_CODE_LATE_WEATHER = 30;
+    uint8 private constant STATUS_CODE_UNKNOWN        =  0;
+    uint8 private constant STATUS_CODE_ON_TIME        = 10;
+    uint8 private constant STATUS_CODE_LATE_AIRLINE   = 20;
+    uint8 private constant STATUS_CODE_LATE_WEATHER   = 30;
     uint8 private constant STATUS_CODE_LATE_TECHNICAL = 40;
-    uint8 private constant STATUS_CODE_LATE_OTHER = 50;
+    uint8 private constant STATUS_CODE_LATE_OTHER     = 50;
 
-    struct Flight {
+    struct FlightResponse {
         bool isRegistered;
         uint8 statusCode;
         uint256 updatedTimestamp;
         address airline;
     }
 
-    mapping(bytes32 => Flight) private _flights;
+    mapping(bytes32 => FlightResponse) private _flightResponses;
 
     FlightSurety private _dataContract;
 
@@ -32,6 +32,15 @@ contract FlightSuretyApp is Ownable {
     modifier requireIsOperational()
     {
         require(isOperational(), "Contract is currently not operational");
+        _;
+    }
+
+    /**
+    * @dev Modifier that requires the EOA to be a funded airline.
+    */
+    modifier requireFundedAirline()
+    {
+        require(_dataContract.isAirline(msg.sender), "Not funded airline can't participate");
         _;
     }
 
@@ -50,7 +59,7 @@ contract FlightSuretyApp is Ownable {
 
 
     /**
-     * @dev Add an airline to the registration queue
+    * @dev Add an airline to the registration queue
     */
     function registerAirline(address airline) external returns (bool success, uint256 votes)
     {
@@ -59,32 +68,27 @@ contract FlightSuretyApp is Ownable {
 
 
     /**
-     * @dev Register a future flight for insuring.
-    *
+    * @dev Register a future flight for insuring.
     */
-    function registerFlight
-    (
-    )
-    external
-    pure
+    function registerFlight(string flight, uint256 departureTimestamp) external
     {
-
+        _dataContract.registerFlight(flight, departureTimestamp);
     }
 
     /**
      * @dev Called after oracle has updated flight status
     *
     */
-    function processFlightStatus
-    (
-        address airline,
-        string memory flight,
-        uint256 timestamp,
-        uint8 statusCode
-    )
-    internal
-    pure
+    function processFlightStatus(address airline, string memory flight, uint256 timestamp, uint8 statusCode) internal
     {
+        _dataContract.updateFlightStatus(flight, statusCode);
+        if(statusCode == STATUS_CODE_LATE_AIRLINE){
+            _dataContract.creditInsurees(flight);
+        }
+
+        bytes32 key = getFlightKey(airline, flight, timestamp);
+        bool isFlightRegistered = _dataContract.isFlightRegistered(flight);
+        _flightResponses[key] = FlightResponse(isFlightRegistered, statusCode, timestamp, airline);
     }
 
 
@@ -287,4 +291,9 @@ contract FlightSurety {
     function setOperatingStatus(bool operational) external;
     function isOperational() public view returns (bool);
     function registerAirline(address airline) external returns (bool, uint256);
+    function isAirline(address airline) public view returns (bool);
+    function registerFlight(string flight, uint256 departureTimestamp) external;
+    function updateFlightStatus(string flight, uint8 status) external;
+    function isFlightRegistered(string flight) public view returns (bool);
+    function creditInsurees(string flight) external;
 }
