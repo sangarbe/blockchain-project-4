@@ -6,20 +6,11 @@ contract('Oracles', async (accounts) => {
   let flightSuretyData;
   let flightSuretyApp;
 
-  const TEST_ORACLES_COUNT = 20;
+  const TEST_ORACLES_COUNT = 10;
   var config;
   before('setup contract', async () => {
     flightSuretyData = await FlightSuretyData.new();
     flightSuretyApp = await FlightSuretyApp.new(flightSuretyData.address);
-
-    // Watch contract events
-    const STATUS_CODE_UNKNOWN = 0;
-    const STATUS_CODE_ON_TIME = 10;
-    const STATUS_CODE_LATE_AIRLINE = 20;
-    const STATUS_CODE_LATE_WEATHER = 30;
-    const STATUS_CODE_LATE_TECHNICAL = 40;
-    const STATUS_CODE_LATE_OTHER = 50;
-
   });
 
 
@@ -43,7 +34,7 @@ contract('Oracles', async (accounts) => {
     let timestamp = Math.floor(Date.now() / 1000);
 
     // Submit a request for oracles to get status information for a flight
-    await flightSuretyApp.fetchFlightStatus(firstAirline, flight, timestamp);
+    await flightSuretyApp.fetchFlightStatus(accounts[0], flight, timestamp);
     // ACT
 
     // Since the Index assigned to each test account is opaque by design
@@ -64,12 +55,8 @@ contract('Oracles', async (accounts) => {
           // Enable this when debugging
           console.log('\nError', idx, oracleIndexes[idx].toNumber(), flight, timestamp);
         }
-
       }
     }
-
-
   });
-
 
 });

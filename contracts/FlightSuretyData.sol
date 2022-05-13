@@ -71,6 +71,25 @@ contract FlightSuretyData is Operational {
         _;
     }
 
+    /**
+    * @dev Modifier that requires the flight to be registered.
+    */
+    modifier requireRegisteredFlight(string flight)
+    {
+        require(_flights[flight].isRegistered, "Flight is not registered");
+        _;
+    }
+
+    /**
+    * @dev Modifier that requires the flight not to be late already.
+    */
+    modifier requireNotLateFlight(string flight)
+    {
+        require(_flights[flight].statusCode <= STATUS_CODE_ON_TIME, "Flight is already late");
+        _;
+    }
+
+
     constructor() public
     {
         _airlines[msg.sender].status = AirlineStatus.REGISTERED;
@@ -160,16 +179,20 @@ contract FlightSuretyData is Operational {
         _flights[flight] = Flight(true, false, STATUS_CODE_ON_TIME, departureTimestamp, tx.origin);
     }
 
+    function isFlight(string flight) public view returns (bool)
+    {
+        return _flights[flight].isRegistered;
+    }
+
     /**
     * @dev Updates flight's status.
     */
     function updateFlightStatus(string flight, uint8 status) external
     requireIsOperational
     requireAuthorizedCaller
+    requireRegisteredFlight(flight)
+    requireNotLateFlight(flight)
     {
-        require(_flights[flight].isRegistered, "Flight is not registered");
-        require(_flights[flight].statusCode <= STATUS_CODE_ON_TIME, "Flight is already late");
-
         _flights[flight].statusCode = status;
     }
 
@@ -183,10 +206,10 @@ contract FlightSuretyData is Operational {
     */
     function buy(string flight) external payable
     requireIsOperational
+    requireRegisteredFlight(flight)
+    requireNotLateFlight(flight)
     {
         require(msg.value > 0, "Should pay something");
-        require(_flights[flight].isRegistered, "Flight is not registered");
-        require(_flights[flight].statusCode <= STATUS_CODE_ON_TIME, "Flight is already late");
 
         uint256 amount = _insurees[flight][msg.sender].add(msg.value);
         require(amount <= 1 ether, "Can not pay more than 1 ether");
@@ -196,6 +219,11 @@ contract FlightSuretyData is Operational {
         }
 
         _insurees[flight][msg.sender] = amount;
+    }
+
+    function isInsuree(string flight, address passenger) public view returns (bool)
+    {
+        return _insurees[flight][passenger] > 0;
     }
 
     /**
@@ -219,6 +247,11 @@ contract FlightSuretyData is Operational {
     }
 
 
+    function credits(address insuree) public view returns (uint256)
+    {
+        return _credits[insuree];
+    }
+
     /**
     * @dev Transfers eligible payout funds to insuree
     */
@@ -233,7 +266,7 @@ contract FlightSuretyData is Operational {
     /**
     * @dev Calculates the amount of participants for consensus.
     */
-    function _consensus() private returns (uint256)
+    function _consensus() internal view returns (uint256)
     {
         uint256 half = _participants.div(2);
         if (_participants == half.mul(2)) {
