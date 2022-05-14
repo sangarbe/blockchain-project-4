@@ -80,7 +80,10 @@ contract('Flight Surety Tests', async (accounts) => {
   it('(airlines) an airline can not register a fifth airline without consensus', async () => {
     await flightSuretyApp.registerAirline(accounts[4]);
     assert.equal(await flightSuretyData.isAirline.call(accounts[4]), false, `Airline added without funding`);
-    await expectRevert(flightSuretyData.fund({value: web3.utils.toWei("10", "ether"), from: accounts[4]}), "Airline is not registered");
+    await expectRevert(flightSuretyData.fund({
+      value: web3.utils.toWei("10", "ether"),
+      from: accounts[4]
+    }), "Airline is not registered");
     assert.equal(await flightSuretyData.participants.call(), 4, `Airline accounted`);
   });
 
@@ -104,7 +107,7 @@ contract('Flight Surety Tests', async (accounts) => {
 
   it('(flights) registration fails if flight already took off', async () => {
     const flight = "flight 2";
-    await expectRevert(flightSuretyApp.registerFlight(flight, Math.floor(Date.now() / 1000) - 60 , {from: accounts[1]}), "Flight already took off");
+    await expectRevert(flightSuretyApp.registerFlight(flight, Math.floor(Date.now() / 1000) - 60, {from: accounts[1]}), "Flight already took off");
   });
 
   it('(passengers) registration fails if flight not registered', async () => {
@@ -120,30 +123,35 @@ contract('Flight Surety Tests', async (accounts) => {
 
   it('(passengers) can not buy a flight paid more than 1 ether', async () => {
     const flight = "flight 1";
-    await expectRevert(flightSuretyData.buy(flight, {from: accounts[8], value: web3.utils.toWei("2", "ether") }), "Can not pay more than 1 ether");
+    await expectRevert(flightSuretyData.buy(flight, {
+      from: accounts[8],
+      value: web3.utils.toWei("2", "ether")
+    }), "Can not pay more than 1 ether");
     assert.equal(await flightSuretyData.isInsuree.call(flight, accounts[8]), false, `Passenger paid above limit`);
   });
 
   it('(passengers) can buy a flight paying up to 1 ether', async () => {
     const flight = "flight 1";
-    await flightSuretyData.buy(flight, {from: accounts[8], value: web3.utils.toWei("1", "ether") });
+    await flightSuretyData.buy(flight, {from: accounts[8], value: web3.utils.toWei("1", "ether")});
     assert.equal(await flightSuretyData.isInsuree.call(flight, accounts[8]), true, `Passenger not an insuree`);
     assert.equal(await flightSuretyData.credits.call(accounts[8]), 0, `Insuree credited before flight issue`);
   });
 
-  it('(passengers) are not credited if reason not mistake of the airline', async () => {
+  it('(passengers) are not credited if issue is not due to the airline', async () => {
+    const now = Math.ceil(Date.now() / 1000) + 1;
     const oracle = accounts[7];
     const flight = "flight 1";
     const fee = await flightSuretyApp.REGISTRATION_FEE.call();
-    await flightSuretyApp.registerOracle({from: accounts[7], value: fee});
-    const indexes = await flightSuretyApp.getMyIndexes.call({from: accounts[7]});
-    const now = Math.ceil(Date.now() / 1000) + 1;
+    const tx = await flightSuretyApp.fetchFlightStatus(accounts[1], flight, now);
+    let index = tx.logs[0].args[0].toString();
 
-    let index;
-    do{
-      const tx = await flightSuretyApp.fetchFlightStatus(accounts[1], flight, now);
-      index = tx.logs[0].args[0].toString();
-    }while(!indexes.find((i) => i.toString() === index))
+    console.log("index: ", index);
+    do {
+      await flightSuretyApp.registerOracle({from: oracle, value: fee});
+      const indexes = await flightSuretyApp.getMyIndexes.call({from: oracle});
+      console.log("oindexes: ", indexes.map((i) => i.toString()));
+      if (indexes.find((i) => i.toString() === index)) break;
+    } while (true)
 
     index = Number(index);
     await flightSuretyApp.submitOracleResponse(index, accounts[1], flight, now, 0, {from: oracle});
@@ -154,17 +162,18 @@ contract('Flight Surety Tests', async (accounts) => {
   });
 
   it('(passengers) are credited with 1.5 times what they paid', async () => {
+    const now = Math.ceil(Date.now() / 1000) + 1;
     const oracle = accounts[7];
     const flight = "flight 1";
-    const indexes = await flightSuretyApp.getMyIndexes.call({from: oracle});
-    const now = Math.ceil(Date.now() / 1000) + 2;
+    const fee = await flightSuretyApp.REGISTRATION_FEE.call();
+    const tx = await flightSuretyApp.fetchFlightStatus(accounts[1], flight, now);
+    let index = tx.logs[0].args[0].toString();
 
-
-    let index;
-    do{
-      const tx = await flightSuretyApp.fetchFlightStatus(accounts[1], flight, now);
-      index = tx.logs[0].args[0].toString();
-    }while(!indexes.find((i) => i.toString() === index))
+    do {
+      await flightSuretyApp.registerOracle({from: oracle, value: fee});
+      const indexes = await flightSuretyApp.getMyIndexes.call({from: oracle});
+      if (indexes.find((i) => i.toString() === index)) break;
+    } while (true)
 
     index = Number(index);
     await flightSuretyApp.submitOracleResponse(index, accounts[1], flight, now, STATUS_CODE_LATE_AIRLINE, {from: oracle});
@@ -177,14 +186,15 @@ contract('Flight Surety Tests', async (accounts) => {
   it('(passengers) can withdraw credits', async () => {
     const passenger = accounts[8];
     const balance = Number(await web3.eth.getBalance(passenger));
-    const credit = await flightSuretyData.credits.call(passenger);
+    const credit = Number(await flightSuretyData.credits.call(passenger));
 
-    await flightSuretyData.pay({from: passenger});
+    const tx = await flightSuretyData.pay({from: passenger});
+    const gasUsed = Number(tx.receipt.gasUsed);
+    const gasPrice = Number(tx.receipt.effectiveGasPrice);
+    const newBalance = Number(await web3.eth.getBalance(passenger));
 
     assert.equal(await flightSuretyData.credits.call(passenger), 0, `Credits not initialized`);
-
-    const newBalance = Number(await web3.eth.getBalance(passenger));
-    assert.equal(newBalance, credit + balance, `Credits not transferred`);
+    assert.equal(newBalance, credit + balance - (gasPrice * gasUsed), `Credits not transferred`);
   });
 
 });
