@@ -19,6 +19,7 @@
     "@babel/core": "^7.0.0",
     "@babel/plugin-proposal-class-properties": "^7.0.0",
     "@babel/plugin-proposal-object-rest-spread": "^7.0.0",
+    "@babel/plugin-transform-runtime": "^7.17.10",
     "@babel/preset-env": "^7.0.0",
     "babel-core": "6.26.3",
     "babel-loader": "8.0.5",
@@ -44,6 +45,7 @@
     "webpack-node-externals": "1.7.2"
   },
   "dependencies": {
-    "@openzeppelin/test-helpers": "^0.5.15"
+    "@openzeppelin/test-helpers": "^0.5.15",
+    "regenerator-runtime": "^0.13.9"
   }
 }
