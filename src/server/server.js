@@ -8,11 +8,11 @@ const web3 = new Web3(new Web3.providers.WebsocketProvider(config.url.replace('h
 const flightSuretyApp = new web3.eth.Contract(FlightSuretyApp.abi, config.appAddress);
 const {REGISTRATION_FEE, registerOracle, getMyIndexes, submitOracleResponse} = flightSuretyApp.methods;
 const statusCodes = [0, 10, 10, 20, 20, 20, 20, 30, 40, 50]; // 40% probability of airline fault
+const gasLimit = 500000;
 
 async function registerOracles() {
   const accounts = await web3.eth.getAccounts();
   const defaultAccount = accounts[0];
-  const gasLimit = 100000;
 
   const fee = await REGISTRATION_FEE().call({from: defaultAccount});
 
@@ -36,23 +36,28 @@ async function registerOracles() {
   return oracles;
 }
 
+async function submitResponse(event, oracle) {
+  const {index, airline, flight, timestamp} = event.returnValues;
+
+  if (!oracle.indexes.find((item) => item === index.toString())) return;
+
+  try {
+    console.log(`oracle ${oracle.oracle} submitting code ${oracle.code} for flight ${flight}`)
+    await submitOracleResponse(index, airline, flight, timestamp, oracle.code).send({from: oracle.oracle, gas: gasLimit})
+  } catch (err) {
+    console.log(`oracle ${oracle.oracle} failed submiting response for flight ${flight}`);
+  }
+}
+
 async function main() {
   const oracles = await registerOracles();
 
   flightSuretyApp.events.OracleRequest({
     fromBlock: 0
-  }, function (error, event) {
-    if (error) console.log(error);
+  }).on('data', (event)=>{
     console.log(event);
-
-    const {index, airline, flight, timestamp} = event.returnValues;
-
-    oracles.filter((item) =>
-      !!item.indexes.find((item) => item === index.toString())
-    ).forEach((item) =>
-      submitOracleResponse(index, airline, flight, timestamp, item.code).send({from: item.oracle})
-    )
-  });
+    oracles.forEach((oracle) => submitResponse(event, oracle));
+  }).on('error', (err) =>console.log);
 }
 
 main();

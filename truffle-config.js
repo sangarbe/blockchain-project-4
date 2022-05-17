@@ -10,7 +10,7 @@ module.exports = {
       port: 7545,
       network_id: '*',
       gas: 9999999,
-      accounts: 30,
+      accounts: 50,
     }
   },
   compilers: {
