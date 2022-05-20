@@ -57,6 +57,11 @@ contract FlightSuretyApp is Ownable {
         return _dataContract.isOperational();
     }
 
+    function isAirline(address airline) public view returns (bool)
+    {
+        return _dataContract.isAirline(airline);
+    }
+
 
     /**
     * @dev Add an airline to the registration queue
