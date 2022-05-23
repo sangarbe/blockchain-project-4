@@ -37,6 +37,16 @@ label.form {
     font-size: 14px;
     margin-right: 20px;
 }
-input {
+
+input, select {
     margin-right: 30px;
+    height: 30px;
+}
+
+.row div:not(:first-child) {
+    margin-left: 15px;
+}
+
+.row btn:not(:first-child) {
+    margin-left: 15px;
 }

@@ -18,6 +18,15 @@ function display(title, description, results) {
   displayDiv.append(section);
 }
 
+function getFlightNumber(){
+  const flightSelect = DOM.elid('flight-number');
+  return flightSelect.options[flightSelect.selectedIndex].id;
+}
+
+function getBuyAmount(){
+  return DOM.elid('buy-amount').value;
+}
+
 async function checkOperational(contract) {
   let value, error;
   try {
@@ -33,15 +42,10 @@ async function triggerOracles(contract, flight) {
   let result, error;
   try {
     result = await contract.fetchFlightStatus(flight);
-  } catch (e) {
-    error = e
+    display('Oracles', 'Trigger oracles', [{label: 'Fetch Flight Status', value: result.flight + ' ' + result.timestamp}]);
+  } catch (error) {
+    display('Oracles', 'Trigger oracles', [{label: 'Fetch Flight Status', error}]);
   }
-
-  display('Oracles', 'Trigger oracles', [{
-    label: 'Fetch Flight Status',
-    error,
-    value: result.flight + ' ' + result.timestamp
-  }]);
 }
 
 async function fetchFlights() {
@@ -57,6 +61,16 @@ async function fetchFlights() {
   }
 }
 
+async function buyFlight(contract, flight, amount) {
+  let result, error;
+  try {
+    result = await contract.buyFlight(flight, amount);
+    display('Flights', 'Buy Flight', [{label: 'Available Flights', value: `${result?.flight} x ${result?.amount}`}]);
+  } catch (error) {
+    display('Flights', 'Buy Flight', [{label: 'Available Flights', error}]);
+  }
+}
+
 async function main() {
   await fetchFlights();
 
@@ -66,9 +80,11 @@ async function main() {
   await checkOperational(contract);
 
   DOM.elid('submit-oracle').addEventListener('click', async () => {
-    const flightSelect = DOM.elid('flight-number');
-    const flight = flightSelect.options[flightSelect.selectedIndex].id;
-    await triggerOracles(contract, flight);
+    await triggerOracles(contract, getFlightNumber());
+  });
+
+  DOM.elid('buy-flight').addEventListener('click', async () => {
+    await buyFlight(contract, getFlightNumber(), getBuyAmount());
   });
 }
 

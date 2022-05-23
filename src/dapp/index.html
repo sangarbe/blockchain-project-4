@@ -24,11 +24,18 @@
     <div id="display-wrapper" class="top-20">
     </div>
     <div class="row top-20">
-        <label class="form" for="flight-number">Flight</label>
-        <select id="flight-number"></select>
+        <div>
+            <label class="form" for="flight-number">Flight:</label>
+            <select id="flight-number"></select>
+        </div>
+        <div>
+            <label class="form" for="buy-amount">Buy Amount (ETH):</label>
+            <input type="number" min="0" max="1" step="0.01" id="buy-amount" value="1">
+        </div>
     </div>
     <div class="row top-20">
         <btn class="btn btn-primary" id="submit-oracle">Submit to Oracles</btn>
+        <btn class="btn btn-primary" id="buy-flight">Buy Flight</btn>
     </div>
 </main>
 
