@@ -136,6 +136,12 @@ async function main() {
 main();
 
 const app = express();
+
+app.use(function(req, res, next) {
+  res.header("Access-Control-Allow-Origin", "*");
+  next();
+});
+
 app.get('/api', (req, res) => {
   res.send({
     message: 'An API for use with your Dapp!'

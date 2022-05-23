@@ -3,54 +3,47 @@ import Config from './config.json';
 import Web3 from 'web3';
 
 export default class Contract {
-    constructor(network, callback) {
+  constructor(network) {
+    let config = Config[network];
+    this.web3 = new Web3(new Web3.providers.HttpProvider(config.url));
+    this.flightSuretyApp = new this.web3.eth.Contract(FlightSuretyApp.abi, config.appAddress);
+    this.owner = null;
+    this.airlines = [];
+    this.passengers = [];
+  }
 
-        let config = Config[network];
-        this.web3 = new Web3(new Web3.providers.HttpProvider(config.url));
-        this.flightSuretyApp = new this.web3.eth.Contract(FlightSuretyApp.abi, config.appAddress);
-        this.initialize(callback);
-        this.owner = null;
-        this.airlines = [];
-        this.passengers = [];
+  async initialize() {
+    const accounts = await this.web3.eth.getAccounts()
+
+    this.owner = accounts[0];
+
+    let counter = 1;
+    while (this.airlines.length < 5) {
+      this.airlines.push(accounts[counter++]);
     }
 
-    initialize(callback) {
-        this.web3.eth.getAccounts((error, accts) => {
-           
-            this.owner = accts[0];
+    while (this.passengers.length < 5) {
+      this.passengers.push(accounts[counter++]);
+    }
+  }
 
-            let counter = 1;
-            
-            while(this.airlines.length < 5) {
-                this.airlines.push(accts[counter++]);
-            }
+  async isOperational() {
+    return await this.flightSuretyApp.methods
+      .isOperational()
+      .call({from: this.owner});
+  }
 
-            while(this.passengers.length < 5) {
-                this.passengers.push(accts[counter++]);
-            }
-
-            callback();
-        });
+  async fetchFlightStatus(flight) {
+    let payload = {
+      airline: this.airlines[0],
+      flight: flight,
+      timestamp: Math.floor(Date.now() / 1000)
     }
 
-    isOperational(callback) {
-       let self = this;
-       self.flightSuretyApp.methods
-            .isOperational()
-            .call({ from: self.owner}, callback);
-    }
+    await this.flightSuretyApp.methods
+      .fetchFlightStatus(payload.airline, payload.flight, payload.timestamp)
+      .send({from: this.owner});
 
-    fetchFlightStatus(flight, callback) {
-        let self = this;
-        let payload = {
-            airline: self.airlines[0],
-            flight: flight,
-            timestamp: Math.floor(Date.now() / 1000)
-        } 
-        self.flightSuretyApp.methods
-            .fetchFlightStatus(payload.airline, payload.flight, payload.timestamp)
-            .send({ from: self.owner}, (error, result) => {
-                callback(error, payload);
-            });
-    }
+    return payload;
+  }
 }
